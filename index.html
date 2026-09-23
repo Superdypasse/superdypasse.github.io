@@ -48,6 +48,7 @@
      seul le carrousel (.stage) défile, pas la page entière. */
   #homeView {
     height: 100vh;
+    height: calc(var(--vh, 1vh) * 100);
     height: 100dvh;
     display: flex;
     flex-direction: column;
@@ -76,7 +77,12 @@
   @keyframes bob { 0%,100% { transform: translateY(0);} 50% { transform: translateY(4px);} }
 
   /* ---------- Carousel ---------- */
-  .stage { position: relative; flex: 1 1 auto; min-height: 0; display: flex; justify-content: center; }
+  /* flex: 1 1 0 (et non "auto") évite un bug classique de flexbox : avec
+     "auto", ce bloc essaie de se dimensionner selon son contenu interne
+     (qui utilise lui-même height:100%), ce qui crée une boucle et peut
+     faire déborder le fond du carrousel par-dessus l'en-tête/le pied de
+     page selon la taille d'écran. */
+  .stage { position: relative; flex: 1 1 0; min-height: 0; display: flex; justify-content: center; overflow: hidden; }
   .stage::before {
     content: ""; position: absolute; inset: 0;
     width: min(92%, 480px); margin: 0 auto;
@@ -87,7 +93,7 @@
     overflow-y: auto; overflow-x: hidden;
     scroll-snap-type: y mandatory; scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
-    padding: calc(50% - 90px) 0;
+    padding: calc(50% - 90px) 0; /* valeur de repli, recalculée précisément en JS juste en dessous */
     scrollbar-width: none;
   }
   .carousel::-webkit-scrollbar { display: none; }
@@ -292,6 +298,44 @@
 <script>
 (function() {
 
+  // ---------------------------------------------------------------
+  // Hauteur d'écran fiable sur mobile : la barre d'adresse du
+  // navigateur (Safari/Chrome mobile) apparaît/disparaît en cours de
+  // scroll, ce qui fausse 100vh (et parfois 100dvh sur certains
+  // navigateurs). On calcule donc la vraie hauteur visible en JS et on
+  // la stocke dans --vh, utilisée comme repli dans la CSS ci-dessus.
+  // ---------------------------------------------------------------
+  function setRealVH() {
+    var h = (window.visualViewport ? window.visualViewport.height : window.innerHeight) * 0.01;
+    document.documentElement.style.setProperty('--vh', h + 'px');
+  }
+  setRealVH();
+  window.addEventListener('resize', setRealVH);
+  window.addEventListener('orientationchange', setRealVH);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', setRealVH);
+    window.visualViewport.addEventListener('scroll', setRealVH);
+  }
+
+  // ---------------------------------------------------------------
+  // Espacement haut/bas du carrousel : il doit exactement valoir la
+  // moitié de la hauteur d'une carte "active" pour que la première et
+  // la dernière carte puissent se centrer correctement au scroll-snap.
+  // Une valeur fixe en CSS (approximation basée sur la largeur) se
+  // dérègle si la largeur change beaucoup — on la recalcule donc en JS
+  // à partir des dimensions réellement mesurées.
+  // ---------------------------------------------------------------
+  function updateCarouselPadding() {
+    var stageEl = document.querySelector('.stage');
+    var carouselEl = document.getElementById('carousel');
+    if (!stageEl || !carouselEl) return;
+    var stageHeight = stageEl.clientHeight;
+    var activeCardHeight = carouselEl.clientWidth; // carte active = carré (aspect-ratio 1/1) de la largeur du carrousel
+    var pad = Math.max(0, (stageHeight - activeCardHeight) / 2);
+    carouselEl.style.paddingTop = pad + 'px';
+    carouselEl.style.paddingBottom = pad + 'px';
+  }
+
   // =====================================================================
   //  TES PROJETS — modifie uniquement ce tableau pour tout mettre à jour
   //  (le carrousel ET les pages projet sont générés automatiquement à
@@ -381,9 +425,9 @@
       ],
       image: 'Images/carteillu.webp',      // <-- METS ICI le chemin de TON image principale
       video: '',      // <-- OU un fichier vidéo local (.mp4), ex: 'images/mon-clip.mp4'
-      youtube: '',    // <-- OU un ID de vidéo YouTube (voir explication plus haut)
+      youtube: '4_Jxu1KHtaU',    // <-- OU un ID de vidéo YouTube (voir explication plus haut)
       vertical: true, // <-- mets "true" si c'est un Short / vidéo verticale
-      instagram: 'https://www.instagram.com/reel/Dcv6WZushvA/', // <-- OU un lien de post/reel Instagram
+      instagram: '', // <-- OU un lien de post/reel Instagram
       gallery: ['Images/Capture-d_écran-2026-05-09-145643.webp','Images/illu-marcuspourcourtmetrage.webp','Images/carteillu.webp'],    // <-- METS ICI 1 à 4 images supplémentaires
       artColor: '#2a2a2a'
     },
@@ -560,6 +604,8 @@
       '</div>';
     carousel.insertBefore(card, spacers[1]);
   });
+
+  updateCarouselPadding();
 
   var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
   var progress = document.getElementById('progress');
@@ -749,6 +795,20 @@
       });
     }
   })();
+
+  // Si la fenêtre change de taille (largeur ou hauteur), on recalcule
+  // l'espacement du carrousel et on recentre la carte active, pour que
+  // rien ne se retrouve mal positionné après le redimensionnement.
+  var resizeTimer = null;
+  window.addEventListener('resize', function() {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function() {
+      updateCarouselPadding();
+      if (activeIndex >= 0 && cards[activeIndex]) {
+        cards[activeIndex].scrollIntoView({ behavior: 'auto', block: 'center' });
+      }
+    }, 120);
+  });
 
 })();
 </script>
